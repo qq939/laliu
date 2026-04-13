@@ -50,7 +50,7 @@ def _terminate_and_collect(proc: subprocess.Popen) -> str:
 
 
 class TestStreamWebUI(unittest.TestCase):
-    def test_webui_update_texts_and_latest_image(self):
+    def test_webui_update_config_and_images(self):
         conf = 0.33
         port = _pick_free_port()
         base = f"http://127.0.0.1:{port}"
@@ -101,17 +101,24 @@ class TestStreamWebUI(unittest.TestCase):
             self.assertAlmostEqual(payload["conf"], conf, places=2)
 
             deadline = time.time() + 8.0
+            last_body = None
+            latest_body = None
             while time.time() < deadline:
                 try:
-                    status, body = _http_get(f"{base}/last-image.jpg", timeout_sec=2.0)
-                    if status == 200 and len(body) > 1024:
+                    s1, b1 = _http_get(f"{base}/latest.jpg", timeout_sec=2.0)
+                    s2, b2 = _http_get(f"{base}/last-image.jpg", timeout_sec=2.0)
+                    if s1 == 200 and s2 == 200 and len(b1) > 1024 and len(b2) > 1024:
+                        latest_body = b1
+                        last_body = b2
                         break
                 except urllib.error.HTTPError:
                     pass
                 time.sleep(0.5)
             else:
                 out = _terminate_and_collect(proc)
-                raise AssertionError(f"未在超时内生成最新图片\n{out}")
+                raise AssertionError(f"未在超时内生成 latest/last-image\n{out}")
+
+            self.assertNotEqual(latest_body, last_body, "latest.jpg 与 last-image.jpg 不应完全相同")
         finally:
             _terminate_and_collect(proc)
 

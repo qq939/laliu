@@ -13,11 +13,11 @@ from flask import Flask, Response, jsonify, redirect, request
 # ==========================================
 # GLOBAL PARAMETERS (全局参数)
 # ==========================================
-# RTSP_URL 在本文件第 177 行作为参数传给 cv2.VideoCapture() 用于拉流
+# RTSP_URL 在本文件第 216 行作为参数传给 cv2.VideoCapture() 用于拉流
 RTSP_URL = os.environ.get("LALIU_RTSP_URL", "rtsp://192.168.8.102:8554/ams/live")
-# SAMPLE_INTERVAL_SEC 在本文件第 160 行用于控制采样节奏（默认 10 秒/帧）
+# SAMPLE_INTERVAL_SEC 在本文件第 193 行用于控制采样节奏（默认 10 秒/帧）
 SAMPLE_INTERVAL_SEC = float(os.environ.get("LALIU_SAMPLE_INTERVAL_SEC", "10"))
-# OPENCV_FFMPEG_CAPTURE_OPTIONS 在本文件第 177 行创建 VideoCapture 前设置，使其在第 177 行生效（连接超时 5 秒，单位微秒）
+# OPENCV_FFMPEG_CAPTURE_OPTIONS 在本文件第 216 行创建 VideoCapture 前设置，使其在第 216 行生效（连接超时 5 秒，单位微秒）
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = os.environ.get(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000"
 )
@@ -29,7 +29,7 @@ OUTPUT_DIR = os.environ.get("LALIU_OUTPUT_DIR", "run/stream")
 DEFAULT_TEXTS = ["electric screwdriver"]
 # TOPK 在本文件第 92 行控制后处理保留的目标数量（与 test_video.py 一致）
 TOPK = 1
-# DEFAULT_CONF 在本文件第 130 行用于动态调整模型置信度阈值（从 WebUI 更新）
+# DEFAULT_CONF 在本文件第 121 行用于动态调整模型置信度阈值（从 WebUI 更新）
 DEFAULT_CONF = 0.25
 
 
@@ -134,20 +134,23 @@ def _sam3_process_frame(predictor, frame_bgr, texts: List[str], conf: float):
     return frame_bgr
 
 
-def _write_latest_jpg(frame_bgr) -> None:
+def _write_jpg(path: str, frame_bgr) -> None:
     _ensure_output_dir()
     ok, buf = cv2.imencode(".jpg", frame_bgr)
     if not ok:
         raise RuntimeError("JPEG 编码失败")
-    b = buf.tobytes()
-    tmp_latest = _latest_jpg_path() + ".tmp"
-    tmp_last = _last_image_jpg_path() + ".tmp"
-    with open(tmp_latest, "wb") as f:
-        f.write(b)
-    with open(tmp_last, "wb") as f:
-        f.write(b)
-    os.replace(tmp_latest, _latest_jpg_path())
-    os.replace(tmp_last, _last_image_jpg_path())
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(buf.tobytes())
+    os.replace(tmp, path)
+
+
+def _write_latest_jpg(frame_bgr) -> None:
+    _write_jpg(_latest_jpg_path(), frame_bgr)
+
+
+def _write_last_image_jpg(frame_bgr) -> None:
+    _write_jpg(_last_image_jpg_path(), frame_bgr)
 
 
 def _get_texts_snapshot() -> List[str]:
@@ -193,10 +196,16 @@ def _processing_loop(stop_event: threading.Event):
 
         try:
             if DUMMY_MODE:
+                xs = np.arange(640, dtype=np.uint16)
+                ys = np.arange(480, dtype=np.uint16)[:, None]
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                frame[:, :, 0] = (xs % 256).astype(np.uint8)
+                frame[:, :, 1] = (ys % 256).astype(np.uint8)
+                frame[:, :, 2] = ((xs[None, :] + ys) % 256).astype(np.uint8)
                 texts = _get_texts_snapshot()
+                _write_latest_jpg(frame)
                 out = _dummy_process_frame(frame, texts)
-                _write_latest_jpg(out)
+                _write_last_image_jpg(out)
                 _update_status_ok()
                 last_ts = now
                 continue
@@ -218,13 +227,14 @@ def _processing_loop(stop_event: threading.Event):
                 time.sleep(0.5)
                 continue
 
+            _write_latest_jpg(frame)
             texts = _get_texts_snapshot()
             conf = _get_conf_snapshot()
             if predictor is None:
                 out = _dummy_process_frame(frame, texts)
             else:
                 out = _sam3_process_frame(predictor, frame, texts, conf)
-            _write_latest_jpg(out)
+            _write_last_image_jpg(out)
             _update_status_ok()
             last_ts = now
         except Exception as e:
