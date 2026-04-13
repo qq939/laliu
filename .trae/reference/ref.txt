@@ -10,3 +10,6 @@ https://github.com/bluenviron/mediamtx/blob/main/README.md
 
 # FFmpeg RTSP 文档（OpenCV CAP_FFMPEG 底层依赖 FFmpeg，超时/传输方式常用）
 https://ffmpeg.org/ffmpeg-protocols.html#rtsp
+
+# Ultralytics（test_video.py 使用的 SAM3VideoSemanticPredictor 来自此项目）
+https://github.com/ultralytics/ultralytics
