@@ -119,6 +119,18 @@ class TestStreamWebUI(unittest.TestCase):
                 raise AssertionError(f"未在超时内生成 latest/last-image\n{out}")
 
             self.assertNotEqual(latest_body, last_body, "latest.jpg 与 last-image.jpg 不应完全相同")
+
+            deadline = time.time() + 8.0
+            while time.time() < deadline:
+                status, body = _http_get(f"{base}/last-labels.json", timeout_sec=2.0)
+                if status == 200:
+                    payload = json.loads(body.decode("utf-8"))
+                    if payload.get("texts") == ["a", "b", "c"]:
+                        self.assertAlmostEqual(payload["conf"], conf, places=2)
+                        break
+                time.sleep(0.2)
+            else:
+                raise AssertionError("labels 未在超时内更新")
         finally:
             _terminate_and_collect(proc)
 

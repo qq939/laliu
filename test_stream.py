@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import threading
 import time
@@ -60,6 +61,18 @@ def _last_jpg_path() -> str:
 
 def _last_image_jpg_path() -> str:
     return os.path.join(OUTPUT_DIR, "last-image.jpg")
+
+
+def _labels_dir() -> str:
+    return os.path.join(OUTPUT_DIR, "labels")
+
+
+def _last_labels_json_path() -> str:
+    return os.path.join(_labels_dir(), "last-labels.json")
+
+
+def _last_labels_txt_path() -> str:
+    return os.path.join(_labels_dir(), "last-labels.txt")
 
 
 def _set_texts_from_multiline(multiline: str) -> List[str]:
@@ -130,8 +143,8 @@ def _sam3_process_frame(predictor, frame_bgr, texts: List[str], conf: float):
     if hasattr(r, "plot"):
         plotted = r.plot()
         if plotted is not None:
-            return plotted
-    return frame_bgr
+            return plotted, r
+    return frame_bgr, r
 
 
 def _write_jpg(path: str, frame_bgr) -> None:
@@ -151,6 +164,75 @@ def _write_last_jpg(frame_bgr) -> None:
 
 def _write_last_image_jpg(frame_bgr) -> None:
     _write_jpg(_last_image_jpg_path(), frame_bgr)
+
+
+def _write_last_labels(texts: List[str], conf: float, result) -> None:
+    os.makedirs(_labels_dir(), exist_ok=True)
+
+    boxes_out = []
+    polygons_out = []
+
+    def _to_list(x):
+        try:
+            return x.detach().cpu().numpy().tolist()
+        except Exception:
+            try:
+                return x.cpu().numpy().tolist()
+            except Exception:
+                try:
+                    return x.numpy().tolist()
+                except Exception:
+                    return None
+
+    if result is not None:
+        boxes = getattr(result, "boxes", None)
+        if boxes is not None and len(boxes):
+            xyxy = _to_list(getattr(boxes, "xyxy", None))
+            confs = _to_list(getattr(boxes, "conf", None))
+            clss = _to_list(getattr(boxes, "cls", None))
+            if xyxy is None:
+                xyxy = []
+            if confs is None:
+                confs = []
+            if clss is None:
+                clss = [0.0 for _ in range(len(xyxy))]
+            for i in range(min(len(xyxy), len(confs), len(clss))):
+                boxes_out.append(
+                    {"xyxy": xyxy[i], "conf": float(confs[i]), "cls": float(clss[i])}
+                )
+
+        masks = getattr(result, "masks", None)
+        xy = getattr(masks, "xy", None) if masks is not None else None
+        if xy is not None:
+            try:
+                for poly in xy:
+                    poly_list = _to_list(poly)
+                    if poly_list is None and hasattr(poly, "tolist"):
+                        poly_list = poly.tolist()
+                    if poly_list is not None:
+                        polygons_out.append(poly_list)
+            except Exception:
+                pass
+
+    payload = {
+        "texts": list(texts),
+        "conf": float(conf),
+        "boxes": boxes_out,
+        "polygons": polygons_out,
+    }
+    tmp_json = _last_labels_json_path() + ".tmp"
+    with open(tmp_json, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+    os.replace(tmp_json, _last_labels_json_path())
+
+    tmp_txt = _last_labels_txt_path() + ".tmp"
+    with open(tmp_txt, "w", encoding="utf-8") as f:
+        for b in boxes_out:
+            xyxy = b.get("xyxy") or []
+            if len(xyxy) == 4:
+                x1, y1, x2, y2 = xyxy
+                f.write(f'{b["conf"]:.4f} {x1:.2f} {y1:.2f} {x2:.2f} {y2:.2f}\n')
+    os.replace(tmp_txt, _last_labels_txt_path())
 
 
 def _get_texts_snapshot() -> List[str]:
@@ -203,9 +285,11 @@ def _processing_loop(stop_event: threading.Event):
                 frame[:, :, 1] = (ys % 256).astype(np.uint8)
                 frame[:, :, 2] = ((xs[None, :] + ys) % 256).astype(np.uint8)
                 texts = _get_texts_snapshot()
+                conf = _get_conf_snapshot()
                 _write_last_jpg(frame)
                 out = _dummy_process_frame(frame, texts)
                 _write_last_image_jpg(out)
+                _write_last_labels(texts, conf, None)
                 _update_status_ok()
                 last_ts = now
                 continue
@@ -232,9 +316,11 @@ def _processing_loop(stop_event: threading.Event):
             conf = _get_conf_snapshot()
             if predictor is None:
                 out = _dummy_process_frame(frame, texts)
+                res = None
             else:
-                out = _sam3_process_frame(predictor, frame, texts, conf)
+                out, res = _sam3_process_frame(predictor, frame, texts, conf)
             _write_last_image_jpg(out)
+            _write_last_labels(texts, conf, res)
             _update_status_ok()
             last_ts = now
         except Exception as e:
@@ -378,6 +464,26 @@ def last_image_jpg():
     with open(path, "rb") as f:
         data = f.read()
     return Response(data, mimetype="image/jpeg")
+
+
+@app.get("/last-labels.json")
+def last_labels_json():
+    path = _last_labels_json_path()
+    if not os.path.exists(path):
+        return Response("no labels", status=404)
+    with open(path, "rb") as f:
+        data = f.read()
+    return Response(data, mimetype="application/json")
+
+
+@app.get("/last-labels.txt")
+def last_labels_txt():
+    path = _last_labels_txt_path()
+    if not os.path.exists(path):
+        return Response("no labels", status=404)
+    with open(path, "rb") as f:
+        data = f.read()
+    return Response(data, mimetype="text/plain")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
