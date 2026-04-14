@@ -147,8 +147,8 @@ class TestStreamWebUI(unittest.TestCase):
             self.assertNotEqual(latest_body, last_body, "latest.jpg 与 last-image.jpg 不应完全相同")
 
             deadline = time.time() + 8.0
-            ultra_img = os.path.join(output_dir, "ultralytics", "last.jpg")
-            ultra_lbl = os.path.join(output_dir, "ultralytics", "labels", "last.txt")
+            ultra_img = os.path.join(output_dir, "ultralytics", "predict", "last.jpg")
+            ultra_lbl = os.path.join(output_dir, "ultralytics", "predict", "labels", "last.txt")
             while time.time() < deadline:
                 if os.path.exists(ultra_img) and os.path.getsize(ultra_img) > 1024:
                     if os.path.exists(ultra_lbl):

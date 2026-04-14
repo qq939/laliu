@@ -81,12 +81,16 @@ def _ultralytics_dir() -> str:
     return os.path.join(OUTPUT_DIR, "ultralytics")
 
 
-def _ultralytics_last_jpg_path() -> str:
-    return os.path.join(_ultralytics_dir(), "last.jpg")
+def _ultralytics_predict_dir() -> str:
+    return os.path.join(_ultralytics_dir(), "predict")
 
 
 def _ultralytics_labels_dir() -> str:
-    return os.path.join(_ultralytics_dir(), "labels")
+    return os.path.join(_ultralytics_predict_dir(), "labels")
+
+
+def _ultralytics_last_jpg_path() -> str:
+    return os.path.join(_ultralytics_predict_dir(), "last.jpg")
 
 
 def _ultralytics_last_txt_path() -> str:
@@ -128,7 +132,7 @@ def _build_sam3_predictor(conf: float):
         model="sam3.pt",
         half=False,
     )
-    overrides.update(project=os.path.join(OUTPUT_DIR, "ultralytics"), save_txt=True)
+    overrides.update(project=_ultralytics_dir(), name="predict", save_txt=True)
 
     predictor = SAM3VideoSemanticPredictor(overrides=overrides)
     _postprocess = predictor.postprocess
