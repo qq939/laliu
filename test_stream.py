@@ -142,7 +142,7 @@ def _dummy_process_frame(frame_bgr, texts: List[str]):
 
 
 def _build_sam3_predictor(conf: float):
-    from ultralytics.models.sam.predict import SAM3VideoSemanticPredictor
+    from ultralytics.models.sam.predict import SAM3SemanticPredictor
 
     try:
         from ultralytics.utils import LOGGER
@@ -162,7 +162,7 @@ def _build_sam3_predictor(conf: float):
     )
     overrides.update(project=_ultralytics_dir(), name="predict", save_txt=True)
 
-    predictor = SAM3VideoSemanticPredictor(overrides=overrides)
+    predictor = SAM3SemanticPredictor(overrides=overrides)
     _postprocess = predictor.postprocess
 
     def postprocess(preds, img, orig_imgs, *, _k=TOPK, _f=_postprocess):
@@ -185,11 +185,13 @@ def _sam3_process_frame(predictor, source, texts: List[str], conf: float):
             predictor.args.conf = conf
         except Exception:
             pass
-    results = predictor(source=source, text=texts, stream=False, save=True)
-    if isinstance(results, list) and results:
-        r = results[0]
+    if isinstance(source, str):
+        predictor.set_image(source)
+        results = predictor(text=texts, save=True)
+        r = results[0] if isinstance(results, list) and results else next(iter(results))
     else:
-        r = next(iter(results))
+        results = predictor(source=source, text=texts, stream=False, save=True)
+        r = results[0] if isinstance(results, list) and results else next(iter(results))
     if hasattr(r, "plot"):
         plotted = r.plot()
         if plotted is not None:

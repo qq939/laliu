@@ -199,7 +199,7 @@ def _write_last_labels(cfg: RuntimeConfig, result) -> str:
 
 
 def _build_sam3_predictor(conf: float):
-    from ultralytics.models.sam.predict import SAM3VideoSemanticPredictor
+    from ultralytics.models.sam.predict import SAM3SemanticPredictor
 
     try:
         from ultralytics.utils import LOGGER
@@ -219,7 +219,7 @@ def _build_sam3_predictor(conf: float):
     )
     overrides.update(project=_ultralytics_dir(), name="predict", save_txt=True)
 
-    predictor = SAM3VideoSemanticPredictor(overrides=overrides)
+    predictor = SAM3SemanticPredictor(overrides=overrides)
     _postprocess = predictor.postprocess
 
     def postprocess(preds, img, orig_imgs, *, _k=TOPK, _f=_postprocess):
@@ -243,11 +243,9 @@ def _sam3_process_file(predictor, image_path: str, texts: List[str], conf: float
         except Exception:
             pass
 
-    results = predictor(source=image_path, text=texts, stream=False, save=True)
-    if isinstance(results, list) and results:
-        r = results[0]
-    else:
-        r = next(iter(results))
+    predictor.set_image(image_path)
+    results = predictor(text=texts, save=True)
+    r = results[0] if isinstance(results, list) and results else next(iter(results))
 
     if hasattr(r, "plot"):
         plotted = r.plot()
@@ -348,4 +346,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
