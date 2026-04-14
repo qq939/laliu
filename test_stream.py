@@ -618,12 +618,12 @@ def index():
         display: grid;
         gap: 16px;
         grid-template-columns: 1fr;
+        align-items: stretch;
       }}
 
       @media (min-width: 1200px) {{
         .grid {{
           grid-template-columns: 1fr 1fr 1fr;
-          align-items: start;
         }}
       }}
 
@@ -643,6 +643,7 @@ def index():
         min-height: 520px;
         display: flex;
         flex-direction: column;
+        height: 100%;
       }}
 
       html[data-theme="dark"] .panel {{
@@ -831,7 +832,22 @@ def index():
         outline: none;
         transition: border-color 140ms ease;
       }}
-      html[data-theme="dark"] textarea, html[data-theme="dark"] input[type="number"] {{ background: rgba(8, 16, 29, 0.65); }}
+      html[data-theme="dark"] textarea, html[data-theme="dark"] input[type="number"], html[data-theme="dark"] input[type="text"] {{ background: rgba(8, 16, 29, 0.65); }}
+
+      textarea, input[type="number"], input[type="text"] {{
+        width: 100%;
+        border: 1px solid var(--border-soft);
+        background: rgba(15, 26, 43, 0.45);
+        border-radius: 12px;
+        color: var(--text);
+        outline: none;
+        padding: 10px 10px;
+        font-size: 14px;
+        transition: border-color 140ms ease, background 140ms ease;
+      }}
+
+      textarea:hover, input[type="number"]:hover, input[type="text"]:hover {{ border-color: rgba(59, 111, 182, 0.28); }}
+      textarea:focus, input[type="number"]:focus, input[type="text"]:focus {{ border-color: rgba(59, 111, 182, 0.5); background: rgba(15, 26, 43, 0.55); }}
       textarea:focus, input[type="number"]:focus {{ border-color: rgba(59, 111, 182, 0.45); }}
 
       textarea {{
@@ -933,7 +949,7 @@ def index():
                 <div class="mono">/last.jpg</div>
                 <div>等待图像…</div>
               </div>
-              <img id="img_raw" src="/last.jpg" alt="raw" style="display:none" />
+              <img id="img_raw" data-has-img="0" src="/last.jpg" alt="raw" style="display:none" />
             </div>
             <div class="kv">
               <div class="k">输入</div>
@@ -971,7 +987,7 @@ def index():
                 <div class="mono">/last-processed.jpg</div>
                 <div>等待结果…</div>
               </div>
-              <img id="img" src="/last-processed.jpg" alt="processed" style="display:none" />
+              <img id="img" data-has-img="0" src="/last-processed.jpg" alt="processed" style="display:none" />
             </div>
             <div class="kv">
               <div class="k">输出</div>
@@ -1080,8 +1096,19 @@ def index():
       function setImg(id, phId, url) {{
         const img = $(id);
         const ph = $(phId);
-        img.onload = () => {{ img.style.display = 'block'; ph.style.display = 'none'; }};
-        img.onerror = () => {{ img.style.display = 'none'; ph.style.display = 'flex'; }};
+        const had = img.getAttribute('data-has-img') === '1';
+        img.onload = () => {{
+          img.style.display = 'block';
+          img.setAttribute('data-has-img', '1');
+          ph.style.display = 'none';
+        }};
+        img.onerror = () => {{
+          const has = img.getAttribute('data-has-img') === '1';
+          if (!has) {{
+            img.style.display = 'none';
+            ph.style.display = 'flex';
+          }}
+        }};
         img.src = url;
       }}
 
