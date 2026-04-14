@@ -13,4 +13,6 @@ __pycache__
 !test_rtsp_reader.py
 !test_stream.py
 !test_stream_ui.py
+!test_cv.py
+!test_cv_smoke.py
 !test_video.py
