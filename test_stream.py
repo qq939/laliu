@@ -25,7 +25,9 @@ os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = os.environ.get(
 # DUMMY_MODE 在本文件第 148 行决定是否加载 SAM3（用于测试/无依赖运行）
 DUMMY_MODE = os.environ.get("LALIU_DUMMY", "0") == "1"
 # OUTPUT_DIR 在本文件第 54 行用于输出 last.jpg/last-image.jpg 给 WebUI 展示
-OUTPUT_DIR = os.environ.get("LALIU_OUTPUT_DIR", "run/stream")
+OUTPUT_DIR = os.environ.get(
+    "LALIU_OUTPUT_DIR", "/Users/jimjiang/Downloads/laliu/runs/stream"
+)
 # DEFAULT_TEXTS 在本文件第 45 行初始化 WebUI 的文本列表
 DEFAULT_TEXTS = ["pliers", "screwdriver"]
 # TOPK 在本文件第 92 行控制后处理保留的目标数量（与 test_video.py 一致）
@@ -110,7 +112,7 @@ def _build_sam3_predictor(conf: float):
         model="sam3.pt",
         half=False,
     )
-    overrides.update(project="run/stream", save_txt=True)
+    overrides.update(project=os.path.join(OUTPUT_DIR, "ultralytics"), save_txt=True)
 
     predictor = SAM3VideoSemanticPredictor(overrides=overrides)
     _postprocess = predictor.postprocess

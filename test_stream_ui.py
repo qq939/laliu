@@ -55,10 +55,15 @@ class TestStreamWebUI(unittest.TestCase):
         port = _pick_free_port()
         base = f"http://127.0.0.1:{port}"
 
+        output_dir = os.path.join(
+            os.path.dirname(__file__), "runs", "stream", f"test_{port}"
+        )
+
         env = os.environ.copy()
         env["LALIU_DUMMY"] = "1"
         env["LALIU_RTSP_URL"] = LALIU_RTSP_URL
         env["LALIU_SAMPLE_INTERVAL_SEC"] = str(SAMPLE_INTERVAL_SEC)
+        env["LALIU_OUTPUT_DIR"] = output_dir
 
         python_exe = sys.executable
         if os.path.exists(os.path.join(".venv", "bin", "python3")):
