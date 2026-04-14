@@ -74,6 +74,7 @@ class SharedState:
     last_saved_ts: float = 0.0
     frame_id: int = 0
     last_error: str = ""
+    force_run: bool = False
     lock: threading.Lock = threading.Lock()
 
 
@@ -101,6 +102,7 @@ STATE = SharedState(
     rtsp_input=str(RTSP_URL),
     rtsp_url=_normalize_camera_input(str(RTSP_URL)),
     sample_interval_sec=float(SAMPLE_INTERVAL_SEC),
+    force_run=False,
 )
 
 
@@ -405,7 +407,11 @@ def _processing_loop(stop_event: threading.Event):
 
     while not stop_event.is_set():
         now = time.time()
-        if now - last_ts < _get_interval_snapshot():
+        with STATE.lock:
+            forced = STATE.force_run
+            if forced:
+                STATE.force_run = False
+        if not forced and now - last_ts < _get_interval_snapshot():
             time.sleep(0.05)
             continue
 
@@ -1194,6 +1200,10 @@ def index():
             body: JSON.stringify({{ texts, conf, rtsp_url, sample_interval_sec }}),
           }});
           if (!r.ok) throw new Error('HTTP ' + r.status);
+          const j = await r.json();
+          $('inp_texts').value = (j.texts || []).join('\n');
+          syncConfInputs(j.conf);
+          if (j.sample_interval_sec != null) syncIntervalInputs(j.sample_interval_sec);
           await refresh();
         }} catch (e) {{
           $('txt_error').textContent = String(e);
@@ -1325,6 +1335,7 @@ def set_config():
             STATE.rtsp_url = _normalize_camera_input(STATE.rtsp_input)
         if interval_sec is not None:
             STATE.sample_interval_sec = float(interval_sec)
+        STATE.force_run = True
 
     if request.is_json:
         return jsonify(
