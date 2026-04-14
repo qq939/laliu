@@ -147,7 +147,7 @@ def _build_sam3_predictor(conf: float):
     try:
         from ultralytics.utils import LOGGER
 
-        LOGGER.setLevel(logging.ERROR)
+        LOGGER.setLevel(logging.INFO)
     except Exception:
         pass
 
@@ -158,6 +158,7 @@ def _build_sam3_predictor(conf: float):
         imgsz=644,
         model="sam3.pt",
         half=False,
+        verbose=True,
     )
     overrides.update(project=_ultralytics_dir(), name="predict", save_txt=True)
 
@@ -178,13 +179,13 @@ def _build_sam3_predictor(conf: float):
     return predictor
 
 
-def _sam3_process_frame(predictor, frame_bgr, texts: List[str], conf: float):
+def _sam3_process_frame(predictor, source, texts: List[str], conf: float):
     if hasattr(predictor, "args") and hasattr(predictor.args, "conf"):
         try:
             predictor.args.conf = conf
         except Exception:
             pass
-    results = predictor(source=frame_bgr, text=texts, stream=False, save=True)
+    results = predictor(source=source, text=texts, stream=False, save=True)
     if isinstance(results, list) and results:
         r = results[0]
     else:
@@ -193,7 +194,10 @@ def _sam3_process_frame(predictor, frame_bgr, texts: List[str], conf: float):
         plotted = r.plot()
         if plotted is not None:
             return plotted, r
-    return frame_bgr, r
+    if isinstance(source, str):
+        img = cv2.imread(source)
+        return (img if img is not None else np.zeros((1, 1, 3), dtype=np.uint8)), r
+    return source, r
 
 
 def _summarize_and_store_infer(res, infer_ms: float):
@@ -405,7 +409,7 @@ def _processing_loop(stop_event: threading.Event):
                 res = None
             else:
                 t0 = time.time()
-                out, res = _sam3_process_frame(predictor, frame, texts, conf)
+                out, res = _sam3_process_frame(predictor, _last_jpg_path(), texts, conf)
                 infer_ms = (time.time() - t0) * 1000.0
                 _summarize_and_store_infer(res, infer_ms)
             _write_last_image_jpg(out)
@@ -423,11 +427,7 @@ def _processing_loop(stop_event: threading.Event):
                 boxes_n = STATE.last_infer_boxes
                 polys_n = STATE.last_infer_polygons
             if predictor is not None:
-                print(
-                    f"image 1/1 {_last_jpg_path()}: {w}x{h} boxes={boxes_n} polygons={polys_n}, {STATE.last_infer_ms:.1f}ms"
-                )
-                print(f"Results saved to {_ultralytics_predict_dir()}")
-                print(f"Labels saved to {_ultralytics_labels_dir()}")
+                pass
         except Exception as e:
             _update_status_err(str(e))
             continue
