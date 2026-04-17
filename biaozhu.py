@@ -2,6 +2,7 @@
 SRC_DIR = "src"  # 第31行：视频源目录
 DST_DIR = "dst"  # 第67行：输出视频目录
 WINDOW_NAME = "视频标注工具"  # 第37行：窗口名称
+SAM_MODEL_PATH = "sam_b.pt"  # SAM模型路径（可下载sam_b.pt或sam3.pt）
 BOX_COLORS = [  # 第55行：标注框颜色列表
     (255, 0, 0),      # 蓝色
     (0, 255, 0),      # 绿色
@@ -43,6 +44,7 @@ class AnnotationBox:
     x2: int
     y2: int
     color: Tuple[int, int, int]
+    mask: np.ndarray = None
 
     def normalize(self):
         if self.x1 > self.x2:
@@ -50,7 +52,7 @@ class AnnotationBox:
         if self.y1 > self.y2:
             self.y1, self.y2 = self.y2, self.y1
 
-    def to_mask(self, height: int, width: int) -> np.ndarray:
+    def to_bbox_mask(self, height: int, width: int) -> np.ndarray:
         mask = np.zeros((height, width), dtype=np.uint8)
         x1, y1 = max(0, self.x1), max(0, self.y1)
         x2, y2 = min(width, self.x2), min(height, self.y2)
@@ -58,7 +60,11 @@ class AnnotationBox:
         return mask
 
     def apply_mask_to_frame(self, frame: np.ndarray, color: Tuple[int, int, int] = None) -> np.ndarray:
-        mask = self.to_mask(frame.shape[0], frame.shape[1])
+        if self.mask is not None:
+            mask = self.mask
+        else:
+            mask = self.to_bbox_mask(frame.shape[0], frame.shape[1])
+
         if color is None:
             color = self.color
         colored_mask = np.zeros_like(frame)
@@ -70,6 +76,28 @@ class AnnotationBox:
             colored_mask[mask_bool], 0.5, 0
         )
         return frame_with_box
+
+    def apply_sam_mask_to_frame(self, frame: np.ndarray, color: Tuple[int, int, int] = None) -> np.ndarray:
+        if self.mask is None:
+            return self.apply_mask_to_frame(frame, color)
+
+        if color is None:
+            color = self.color
+
+        mask = self.mask
+        colored_mask = np.zeros_like(frame)
+        colored_mask[:] = color
+        frame_with_mask = frame.copy()
+        mask_bool = mask > 0
+        frame_with_mask[mask_bool] = cv2.addWeighted(
+            frame[mask_bool], 0.3,
+            colored_mask[mask_bool], 0.7, 0
+        )
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(frame_with_mask, contours, -1, color, 2)
+
+        return frame_with_mask
 
 class VideoAnnotator:
     def __init__(self, video_path: str, output_dir: str):
@@ -217,6 +245,39 @@ class VideoAnnotator:
             print("没有标注框，不生成视频")
             return
 
+        try:
+            from ultralytics import SAM
+            print("正在加载SAM模型...")
+            sam_model = SAM(SAM_MODEL_PATH)
+            use_sam = True
+            print(f"SAM模型加载成功: {SAM_MODEL_PATH}")
+        except Exception as e:
+            print(f"SAM模型加载失败: {e}")
+            print("将使用简单的矩形框标注")
+            use_sam = False
+
+        if use_sam:
+            print("正在使用SAM模型进行智能分割...")
+            print("注意: SAM分割可能需要一些时间，请耐心等待...")
+
+            for i, box in enumerate(self.boxes):
+                print(f"正在分割目标 {i+1}/{len(self.boxes)}...")
+                bbox = [box.x1, box.y1, box.x2, box.y2]
+
+                try:
+                    results = sam_model(self.frame, bboxes=[bbox], verbose=False)
+
+                    if results and results[0].masks is not None:
+                        mask = results[0].masks.data[0].cpu().numpy()
+                        mask = (mask * 255).astype(np.uint8)
+                        box.mask = mask
+                        print(f"  ✓ 目标 {i+1} 分割完成")
+                    else:
+                        print(f"  ⚠ 目标 {i+1} SAM未检测到掩码，使用矩形框")
+                except Exception as e:
+                    print(f"  ✗ 目标 {i+1} 分割失败: {e}")
+                    print(f"  → 使用矩形框替代")
+
         video_name = Path(self.video_path).stem
         output_path = self.output_dir / f"{video_name}_annotated.mp4"
 
@@ -230,6 +291,7 @@ class VideoAnnotator:
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         frame_count = 0
 
+        print("正在生成标注视频...")
         while True:
             ret, frame = self.cap.read()
             if not ret:
@@ -237,11 +299,19 @@ class VideoAnnotator:
 
             annotated_frame = frame.copy()
             for box in self.boxes:
-                annotated_frame = box.apply_mask_to_frame(annotated_frame)
-                cv2.rectangle(annotated_frame,
-                            (box.x1, box.y1),
-                            (box.x2, box.y2),
-                            box.color, 2)
+                if box.mask is not None:
+                    annotated_frame = box.apply_sam_mask_to_frame(annotated_frame)
+                else:
+                    annotated_frame = box.apply_mask_to_frame(annotated_frame)
+                    cv2.rectangle(annotated_frame,
+                                (box.x1, box.y1),
+                                (box.x2, box.y2),
+                                box.color, 2)
+
+                label = f"目标 {self.boxes.index(box) + 1}"
+                annotated_frame = put_chinese_text(annotated_frame, label,
+                                                (box.x1, box.y1 - 10),
+                                                font_size=15, color=box.color)
 
             out.write(annotated_frame)
             frame_count += 1
@@ -250,9 +320,9 @@ class VideoAnnotator:
                 print(f"已处理 {frame_count} 帧")
 
         out.release()
-        print(f"标注视频已保存到: {output_path}")
-        print(f"共处理 {frame_count} 帧")
-        print(f"标注了 {len(self.boxes)} 个目标区域")
+        print(f"✓ 标注视频已保存到: {output_path}")
+        print(f"✓ 共处理 {frame_count} 帧")
+        print(f"✓ 标注了 {len(self.boxes)} 个目标区域")
 
 def main():
     video_files = list(Path(SRC_DIR).glob("*.mp4"))

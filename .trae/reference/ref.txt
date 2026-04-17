@@ -16,3 +16,9 @@ https://github.com/ultralytics/ultralytics
 
 # OpenCV标注工具（鼠标框选bounding box的参考实现）
 https://github.com/tedlu-tw/opencv-annotation-tool
+
+# SAM3使用文档（ultralytics集成）
+https://docs.ultralytics.com/de/models/sam-3/
+
+# SAM3推理代码示例
+https://github.com/RizwanMunawar/sam3-inference
