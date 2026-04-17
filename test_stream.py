@@ -1059,11 +1059,11 @@ def index():
               </div>
               <div class="field">
                 <div class="label">Conf</div>
-                <input id="inp_conf" name="conf" type="number" min="0" max="1" step="0.01" value="{conf:.2f}" />
+                <input id="inp_conf" name="conf" type="number" min="0" max="1" step="any" value="{conf:.2f}" />
               </div>
               <div class="field">
                 <div class="label">采帧间隔（秒）</div>
-                <input id="inp_interval" name="sample_interval_sec" type="number" min="0.05" max="3600" step="0.1" value="{STATE.sample_interval_sec:.1f}" />
+                <input id="inp_interval" name="sample_interval_sec" type="number" min="0.05" max="3600" step="any" value="{STATE.sample_interval_sec:.1f}" />
               </div>
               <div class="field">
                 <div class="label">自动刷新</div>

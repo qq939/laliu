@@ -13,3 +13,6 @@ https://ffmpeg.org/ffmpeg-protocols.html#rtsp
 
 # Ultralytics（test_video.py 使用的 SAM3VideoSemanticPredictor 来自此项目）
 https://github.com/ultralytics/ultralytics
+
+# OpenCV标注工具（鼠标框选bounding box的参考实现）
+https://github.com/tedlu-tw/opencv-annotation-tool
