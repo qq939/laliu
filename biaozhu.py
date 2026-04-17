@@ -245,84 +245,194 @@ class VideoAnnotator:
             print("没有标注框，不生成视频")
             return
 
+        bboxes = [[box.x1, box.y1, box.x2, box.y2] for box in self.boxes]
+
         try:
-            from ultralytics import SAM
-            print("正在加载SAM模型...")
-            sam_model = SAM(SAM_MODEL_PATH)
-            use_sam = True
-            print(f"SAM模型加载成功: {SAM_MODEL_PATH}")
-        except Exception as e:
-            print(f"SAM模型加载失败: {e}")
-            print("将使用简单的矩形框标注")
-            use_sam = False
+            from ultralytics.models.sam import SAM3VideoPredictor
+            print("正在加载SAM3视频分割模型...")
 
-        if use_sam:
-            print("正在使用SAM模型进行智能分割...")
-            print("注意: SAM分割可能需要一些时间，请耐心等待...")
+            overrides = dict(
+                conf=0.25,
+                task="segment",
+                mode="predict",
+                model=SAM_MODEL_PATH,
+                half=False,
+                save=False,
+                verbose=False
+            )
+            predictor = SAM3VideoPredictor(overrides=overrides)
+            print(f"SAM3视频模型加载成功: {SAM_MODEL_PATH}")
 
-            for i, box in enumerate(self.boxes):
-                print(f"正在分割目标 {i+1}/{len(self.boxes)}...")
-                bbox = [box.x1, box.y1, box.x2, box.y2]
+            print("正在使用SAM3进行视频实例分割跟踪...")
+            print(f"将跟踪 {len(self.boxes)} 个目标实例")
 
-                try:
-                    results = sam_model(self.frame, bboxes=[bbox], verbose=False)
+            video_name = Path(self.video_path).stem
+            output_path = self.output_dir / f"{video_name}_annotated.mp4"
 
-                    if results and results[0].masks is not None:
-                        mask = results[0].masks.data[0].cpu().numpy()
-                        mask = (mask * 255).astype(np.uint8)
-                        box.mask = mask
-                        print(f"  ✓ 目标 {i+1} 分割完成")
-                    else:
-                        print(f"  ⚠ 目标 {i+1} SAM未检测到掩码，使用矩形框")
-                except Exception as e:
-                    print(f"  ✗ 目标 {i+1} 分割失败: {e}")
-                    print(f"  → 使用矩形框替代")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        video_name = Path(self.video_path).stem
-        output_path = self.output_dir / f"{video_name}_annotated.mp4"
+            out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        fps = self.cap.get(cv2.CAP_PROP_FPS)
-        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            results = predictor(
+                source=self.video_path,
+                bboxes=bboxes,
+                labels=[1] * len(bboxes),
+                stream=True
+            )
 
-        out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+            frame_count = 0
+            print("正在生成标注视频...")
+            for r in results:
+                annotated_frame = r.plot()
+                annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
 
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        frame_count = 0
+                for i, box in enumerate(self.boxes):
+                    label = f"目标 {i + 1}"
+                    annotated_frame_rgb = put_chinese_text(
+                        annotated_frame_rgb,
+                        label,
+                        (box.x1, max(10, box.y1 - 10)),
+                        font_size=15,
+                        color=box.color
+                    )
 
-        print("正在生成标注视频...")
-        while True:
-            ret, frame = self.cap.read()
-            if not ret:
-                break
+                out.write(annotated_frame_rgb)
+                frame_count += 1
 
-            annotated_frame = frame.copy()
-            for box in self.boxes:
-                if box.mask is not None:
-                    annotated_frame = box.apply_sam_mask_to_frame(annotated_frame)
-                else:
-                    annotated_frame = box.apply_mask_to_frame(annotated_frame)
-                    cv2.rectangle(annotated_frame,
-                                (box.x1, box.y1),
-                                (box.x2, box.y2),
-                                box.color, 2)
+                if frame_count % 30 == 0:
+                    print(f"已处理 {frame_count} 帧")
 
-                label = f"目标 {self.boxes.index(box) + 1}"
-                annotated_frame = put_chinese_text(annotated_frame, label,
-                                                (box.x1, box.y1 - 10),
-                                                font_size=15, color=box.color)
+            out.release()
+            print(f"✓ 标注视频已保存到: {output_path}")
+            print(f"✓ 共处理 {frame_count} 帧")
+            print(f"✓ 标注了 {len(self.boxes)} 个目标区域")
 
-            out.write(annotated_frame)
-            frame_count += 1
+        except ImportError as e:
+            print(f"SAM3VideoPredictor导入失败: {e}")
+            print("正在回退到SAM图片分割模式...")
 
-            if frame_count % 30 == 0:
-                print(f"已处理 {frame_count} 帧")
+            try:
+                from ultralytics import SAM
+                print("正在加载SAM模型...")
+                sam_model = SAM(SAM_MODEL_PATH)
+                print(f"SAM模型加载成功: {SAM_MODEL_PATH}")
 
-        out.release()
-        print(f"✓ 标注视频已保存到: {output_path}")
-        print(f"✓ 共处理 {frame_count} 帧")
-        print(f"✓ 标注了 {len(self.boxes)} 个目标区域")
+                print("正在使用SAM模型进行智能分割...")
+                print("注意: SAM分割可能需要一些时间，请耐心等待...")
+
+                for i, box in enumerate(self.boxes):
+                    print(f"正在分割目标 {i+1}/{len(self.boxes)}...")
+                    bbox = [box.x1, box.y1, box.x2, box.y2]
+
+                    try:
+                        results = sam_model(self.frame, bboxes=[bbox], verbose=False)
+
+                        if results and results[0].masks is not None:
+                            mask = results[0].masks.data[0].cpu().numpy()
+                            mask = (mask * 255).astype(np.uint8)
+                            box.mask = mask
+                            print(f"  ✓ 目标 {i+1} 分割完成")
+                        else:
+                            print(f"  ⚠ 目标 {i+1} SAM未检测到掩码，使用矩形框")
+                    except Exception as e:
+                        print(f"  ✗ 目标 {i+1} 分割失败: {e}")
+                        print(f"  → 使用矩形框替代")
+
+                video_name = Path(self.video_path).stem
+                output_path = self.output_dir / f"{video_name}_annotated.mp4"
+
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                fps = self.cap.get(cv2.CAP_PROP_FPS)
+                width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                frame_count = 0
+
+                print("正在生成标注视频...")
+                while True:
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        break
+
+                    annotated_frame = frame.copy()
+                    for box in self.boxes:
+                        if box.mask is not None:
+                            annotated_frame = box.apply_sam_mask_to_frame(annotated_frame)
+                        else:
+                            annotated_frame = box.apply_mask_to_frame(annotated_frame)
+                            cv2.rectangle(annotated_frame,
+                                        (box.x1, box.y1),
+                                        (box.x2, box.y2),
+                                        box.color, 2)
+
+                        label = f"目标 {self.boxes.index(box) + 1}"
+                        annotated_frame = put_chinese_text(annotated_frame, label,
+                                                        (box.x1, box.y1 - 10),
+                                                        font_size=15, color=box.color)
+
+                    out.write(annotated_frame)
+                    frame_count += 1
+
+                    if frame_count % 30 == 0:
+                        print(f"已处理 {frame_count} 帧")
+
+                out.release()
+                print(f"✓ 标注视频已保存到: {output_path}")
+                print(f"✓ 共处理 {frame_count} 帧")
+                print(f"✓ 标注了 {len(self.boxes)} 个目标区域")
+
+            except Exception as e:
+                print(f"SAM模型加载失败: {e}")
+                print("将使用简单的矩形框标注")
+
+                video_name = Path(self.video_path).stem
+                output_path = self.output_dir / f"{video_name}_annotated.mp4"
+
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                fps = self.cap.get(cv2.CAP_PROP_FPS)
+                width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                frame_count = 0
+
+                print("正在生成标注视频...")
+                while True:
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        break
+
+                    annotated_frame = frame.copy()
+                    for box in self.boxes:
+                        annotated_frame = box.apply_mask_to_frame(annotated_frame)
+                        cv2.rectangle(annotated_frame,
+                                    (box.x1, box.y1),
+                                    (box.x2, box.y2),
+                                    box.color, 2)
+
+                        label = f"目标 {self.boxes.index(box) + 1}"
+                        annotated_frame = put_chinese_text(annotated_frame, label,
+                                                        (box.x1, box.y1 - 10),
+                                                        font_size=15, color=box.color)
+
+                    out.write(annotated_frame)
+                    frame_count += 1
+
+                    if frame_count % 30 == 0:
+                        print(f"已处理 {frame_count} 帧")
+
+                out.release()
+                print(f"✓ 标注视频已保存到: {output_path}")
+                print(f"✓ 共处理 {frame_count} 帧")
+                print(f"✓ 标注了 {len(self.boxes)} 个目标区域")
 
 def main():
     video_files = list(Path(SRC_DIR).glob("*.mp4"))

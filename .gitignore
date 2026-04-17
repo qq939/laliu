@@ -20,6 +20,7 @@ __pycache__
 !biaozhu.py
 !test_chinese_text.py
 !test_sam_integration.py
+!test_sam3_video.py
 !README_SAM.md
 sam_b.pt
 sam3.pt
