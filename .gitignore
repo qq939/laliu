@@ -17,7 +17,7 @@ __pycache__
 !test_cv_smoke.py
 !test_video.py
 !test_biaozhu.py
-!biaozhu.py
+!annotate_video.py
 !test_chinese_text.py
 !test_sam_integration.py
 !test_sam3_video.py
