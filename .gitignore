@@ -16,3 +16,6 @@ __pycache__
 !test_cv.py
 !test_cv_smoke.py
 !test_video.py
+!test_biaozhu.py
+!biaozhu.py
+!test_chinese_text.py

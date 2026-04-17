@@ -1,0 +1,289 @@
+# global参数
+SRC_DIR = "src"  # 第31行：视频源目录
+DST_DIR = "dst"  # 第67行：输出视频目录
+WINDOW_NAME = "视频标注工具"  # 第37行：窗口名称
+BOX_COLORS = [  # 第55行：标注框颜色列表
+    (255, 0, 0),      # 蓝色
+    (0, 255, 0),      # 绿色
+    (0, 0, 255),      # 红色
+    (255, 255, 0),    # 青色
+    (255, 0, 255),    # 紫色
+    (0, 255, 255),    # 黄色
+    (255, 128, 0),    # 橙色
+    (128, 0, 255),    # 紫红色
+]
+
+import cv2
+import numpy as np
+from pathlib import Path
+from dataclasses import dataclass
+from typing import List, Tuple
+from PIL import Image, ImageDraw, ImageFont
+
+def put_chinese_text(img, text, position, font_size=20, color=(255, 255, 255)):
+    """在图像上绘制中文文本（使用UTF-8编码）"""
+    img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", font_size)
+    except:
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/STHeiti Light.ttc", font_size)
+        except:
+            font = ImageFont.load_default()
+
+    draw.text(position, text, font=font, fill=color)
+    return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+@dataclass
+class AnnotationBox:
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    color: Tuple[int, int, int]
+
+    def normalize(self):
+        if self.x1 > self.x2:
+            self.x1, self.x2 = self.x2, self.x1
+        if self.y1 > self.y2:
+            self.y1, self.y2 = self.y2, self.y1
+
+    def to_mask(self, height: int, width: int) -> np.ndarray:
+        mask = np.zeros((height, width), dtype=np.uint8)
+        x1, y1 = max(0, self.x1), max(0, self.y1)
+        x2, y2 = min(width, self.x2), min(height, self.y2)
+        mask[y1:y2, x1:x2] = 255
+        return mask
+
+    def apply_mask_to_frame(self, frame: np.ndarray, color: Tuple[int, int, int] = None) -> np.ndarray:
+        mask = self.to_mask(frame.shape[0], frame.shape[1])
+        if color is None:
+            color = self.color
+        colored_mask = np.zeros_like(frame)
+        colored_mask[:] = color
+        frame_with_box = frame.copy()
+        mask_bool = mask > 0
+        frame_with_box[mask_bool] = cv2.addWeighted(
+            frame[mask_bool], 0.5,
+            colored_mask[mask_bool], 0.5, 0
+        )
+        return frame_with_box
+
+class VideoAnnotator:
+    def __init__(self, video_path: str, output_dir: str):
+        self.video_path = video_path
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.cap = cv2.VideoCapture(video_path)
+        if not self.cap.isOpened():
+            raise ValueError(f"无法打开视频: {video_path}")
+
+        self.ret, self.frame = self.cap.read()
+        if not self.ret:
+            raise ValueError("无法读取视频帧")
+
+        self.boxes: List[AnnotationBox] = []
+        self.current_box: AnnotationBox = None
+        self.drawing = False
+        self.start_point = None
+        self.color_index = 0
+        self.button_clicked = False
+
+        self.window_name = WINDOW_NAME
+        cv2.namedWindow(self.window_name)
+        cv2.setMouseCallback(self.window_name, self.mouse_callback, self)
+
+    def mouse_callback(self, event, x, y, flags, param):
+        annotator = param
+
+        if event == cv2.EVENT_LBUTTONDOWN:
+            annotator.drawing = True
+            annotator.start_point = (x, y)
+            color = BOX_COLORS[annotator.color_index % len(BOX_COLORS)]
+            annotator.current_box = AnnotationBox(x, y, x, y, color)
+
+        elif event == cv2.EVENT_MOUSEMOVE:
+            if annotator.drawing and annotator.current_box:
+                annotator.current_box.x2 = x
+                annotator.current_box.y2 = y
+
+        elif event == cv2.EVENT_LBUTTONUP:
+            button_x1 = annotator.frame.shape[1] - 150
+            button_x2 = button_x1 + 130
+            button_y1 = 30
+            button_y2 = button_y1 + 40
+
+            if button_x1 <= x <= button_x2 and button_y1 <= y <= button_y2:
+                annotator.button_clicked = True
+                print("点击了完成按钮")
+            elif annotator.drawing and annotator.current_box:
+                annotator.current_box.x2 = x
+                annotator.current_box.y2 = y
+                annotator.current_box.normalize()
+                annotator.boxes.append(annotator.current_box)
+                annotator.color_index += 1
+                annotator.drawing = False
+                annotator.current_box = None
+            else:
+                annotator.drawing = False
+                annotator.current_box = None
+
+    def draw_boxes(self, frame: np.ndarray) -> np.ndarray:
+        display_frame = frame.copy()
+
+        for box in self.boxes:
+            cv2.rectangle(display_frame,
+                         (box.x1, box.y1),
+                         (box.x2, box.y2),
+                         box.color, 2)
+            label = f"目标 {self.boxes.index(box) + 1}"
+            display_frame = put_chinese_text(display_frame, label,
+                                            (box.x1, box.y1 - 10),
+                                            font_size=15, color=box.color)
+
+        if self.current_box and self.drawing:
+            cv2.rectangle(display_frame,
+                         (self.current_box.x1, self.current_box.y1),
+                         (self.current_box.x2, self.current_box.y2),
+                         self.current_box.color, 2)
+
+        return display_frame
+
+    def add_complete_button(self, frame: np.ndarray) -> np.ndarray:
+        button_text = "完成标注"
+        button_pos = (frame.shape[1] - 150, 30)
+        button_size = (130, 40)
+
+        cv2.rectangle(frame,
+                     (button_pos[0], button_pos[1]),
+                     (button_pos[0] + button_size[0], button_pos[1] + button_size[1]),
+                     (0, 255, 0), -1)
+        frame = put_chinese_text(frame, button_text,
+                                (button_pos[0] + 15, button_pos[1] + 8),
+                                font_size=18, color=(255, 255, 255))
+
+        return frame
+
+    def show_instructions(self, frame: np.ndarray) -> np.ndarray:
+        instructions = [
+            "操作说明:",
+            "1. 鼠标左键框选目标",
+            "2. 可框选多个目标",
+            "3. 按 'c' 撤销最后一个框",
+            "4. 按 'q' 退出",
+            "5. 点击绿色按钮完成标注"
+        ]
+
+        for i, text in enumerate(instructions):
+            frame = put_chinese_text(frame, text,
+                                    (10, 30 + i * 25),
+                                    font_size=16, color=(255, 255, 255))
+
+        return frame
+
+    def run(self):
+        while True:
+            display_frame = self.draw_boxes(self.frame)
+            display_frame = self.add_complete_button(display_frame)
+            display_frame = self.show_instructions(display_frame)
+
+            cv2.imshow(self.window_name, display_frame)
+
+            if self.button_clicked:
+                self.process_video()
+                break
+
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord('q'):
+                print("用户退出")
+                break
+            elif key == ord('c'):
+                if self.boxes:
+                    removed = self.boxes.pop()
+                    self.color_index = max(0, self.color_index - 1)
+                    print(f"已撤销: {removed}")
+                else:
+                    print("没有可撤销的标注框")
+
+        cv2.destroyAllWindows()
+        self.cap.release()
+
+    def process_video(self):
+        if not self.boxes:
+            print("没有标注框，不生成视频")
+            return
+
+        video_name = Path(self.video_path).stem
+        output_path = self.output_dir / f"{video_name}_annotated.mp4"
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        frame_count = 0
+
+        while True:
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+
+            annotated_frame = frame.copy()
+            for box in self.boxes:
+                annotated_frame = box.apply_mask_to_frame(annotated_frame)
+                cv2.rectangle(annotated_frame,
+                            (box.x1, box.y1),
+                            (box.x2, box.y2),
+                            box.color, 2)
+
+            out.write(annotated_frame)
+            frame_count += 1
+
+            if frame_count % 30 == 0:
+                print(f"已处理 {frame_count} 帧")
+
+        out.release()
+        print(f"标注视频已保存到: {output_path}")
+        print(f"共处理 {frame_count} 帧")
+        print(f"标注了 {len(self.boxes)} 个目标区域")
+
+def main():
+    video_files = list(Path(SRC_DIR).glob("*.mp4"))
+
+    if not video_files:
+        print(f"在 {SRC_DIR} 目录下没有找到视频文件")
+        print("请将视频文件放入 src 目录")
+        return
+
+    print("找到以下视频文件:")
+    for i, video_file in enumerate(video_files, 1):
+        print(f"{i}. {video_file.name}")
+
+    if len(video_files) == 1:
+        video_path = str(video_files[0])
+    else:
+        choice = input("请选择要标注的视频编号: ")
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(video_files):
+                video_path = str(video_files[idx])
+            else:
+                print("无效的选择")
+                return
+        except ValueError:
+            print("请输入有效的数字")
+            return
+
+    print(f"开始标注: {video_path}")
+    annotator = VideoAnnotator(video_path, DST_DIR)
+    annotator.run()
+
+if __name__ == "__main__":
+    main()
