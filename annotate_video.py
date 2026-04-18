@@ -318,8 +318,14 @@ class VideoAnnotator:
             output_filename = get_output_filename(self.video_path)
             output_path = self.output_dir / output_filename
 
-            fourcc_code = int(self.cap.get(cv2.CAP_PROP_FOURCC))
-            fourcc = chr(fourcc_code & 0xFF) + chr((fourcc_code >> 8) & 0xFF) + chr((fourcc_code >> 16) & 0xFF) + chr((fourcc_code >> 24) & 0xFF)
+            fourcc_int = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+            fourcc_str = ''.join([
+                chr(fourcc_int & 0xFF),
+                chr((fourcc_int >> 8) & 0xFF),
+                chr((fourcc_int >> 16) & 0xFF),
+                chr((fourcc_int >> 24) & 0xFF)
+            ])
+            fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
             fps = self.cap.get(cv2.CAP_PROP_FPS)
             width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -396,8 +402,14 @@ class VideoAnnotator:
                 output_filename = get_output_filename(self.video_path)
                 output_path = self.output_dir / output_filename
 
-                fourcc_code = int(self.cap.get(cv2.CAP_PROP_FOURCC))
-                fourcc = chr(fourcc_code & 0xFF) + chr((fourcc_code >> 8) & 0xFF) + chr((fourcc_code >> 16) & 0xFF) + chr((fourcc_code >> 24) & 0xFF)
+                fourcc_int = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+                fourcc_str = ''.join([
+                    chr(fourcc_int & 0xFF),
+                    chr((fourcc_int >> 8) & 0xFF),
+                    chr((fourcc_int >> 16) & 0xFF),
+                    chr((fourcc_int >> 24) & 0xFF)
+                ])
+                fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
                 fps = self.cap.get(cv2.CAP_PROP_FPS)
                 width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -448,8 +460,14 @@ class VideoAnnotator:
                 output_filename = get_output_filename(self.video_path)
                 output_path = self.output_dir / output_filename
 
-                fourcc_code = int(self.cap.get(cv2.CAP_PROP_FOURCC))
-                fourcc = chr(fourcc_code & 0xFF) + chr((fourcc_code >> 8) & 0xFF) + chr((fourcc_code >> 16) & 0xFF) + chr((fourcc_code >> 24) & 0xFF)
+                fourcc_int = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+                fourcc_str = ''.join([
+                    chr(fourcc_int & 0xFF),
+                    chr((fourcc_int >> 8) & 0xFF),
+                    chr((fourcc_int >> 16) & 0xFF),
+                    chr((fourcc_int >> 24) & 0xFF)
+                ])
+                fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
                 fps = self.cap.get(cv2.CAP_PROP_FPS)
                 width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
