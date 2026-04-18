@@ -18,6 +18,8 @@ __pycache__
 !test_video.py
 !test_biaozhu.py
 !annotate_video.py
+!annotate_image.py
+!test_annotate_image.py
 !test_chinese_text.py
 !test_sam_integration.py
 !test_sam3_video.py
